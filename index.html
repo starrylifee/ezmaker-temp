@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>온도 챌린지 - EZMaker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            display: inline-block;
+        }
+
+        .icon-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .icon-lg {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // SVG 아이콘 컴포넌트들
+        const ThermometerIcon = () => (
+            <svg className="icon-lg" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+            </svg>
+        );
+
+        const TrophyIcon = () => (
+            <svg className="icon-lg text-yellow-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                <path d="M4 22h16" />
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+            </svg>
+        );
+
+        const TimerIcon = () => (
+            <svg className="icon animate-pulse" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+            </svg>
+        );
+
+        const AlertCircleIcon = () => (
+            <svg className="icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+        );
+
+        const UsbIcon = ({ className = "" }) => (
+            <svg className={`icon ${className}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="10" cy="7" r="1" />
+                <circle cx="4" cy="20" r="1" />
+                <path d="M4.7 19.3 19 5" />
+                <path d="m21 3-3 1 2 2Z" />
+                <path d="M9.26 7.68 5 12l2 5" />
+                <path d="m10 14 5 2 3.5-3.5" />
+                <path d="m18 12 1-1 1 1-1 1Z" />
+            </svg>
+        );
+
+        const UnplugIcon = ({ className = "" }) => (
+            <svg className={`icon ${className}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="m19 5 3-3" />
+                <path d="m2 22 3-3" />
+                <path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z" />
+                <path d="M7.5 13.5 10 11" />
+                <path d="M10.5 16.5 13 14" />
+                <path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z" />
+            </svg>
+        );
+
+        // 실시간 그래프 컴포넌트 (줌 기능 추가)
+        function TemperatureGraph({ data, targetTemp, tolerance }) {
+            const canvasRef = useRef(null);
+            const [zoomLevel, setZoomLevel] = useState(1); // 1 = 10~40도, 줌인하면 범위 좁아짐
+            const [centerTemp, setCenterTemp] = useState(25); // 줌 중심 온도
+
+            // 줌 레벨에 따른 온도 범위 계산
+            const getRange = () => {
+                const baseRange = 30; // 기본 범위 (40-10 = 30도)
+                const currentRange = baseRange / zoomLevel;
+                const halfRange = currentRange / 2;
+
+                let minTemp = centerTemp - halfRange;
+                let maxTemp = centerTemp + halfRange;
+
+                // 범위 제한
+                if (minTemp < -10) {
+                    minTemp = -10;
+                    maxTemp = minTemp + currentRange;
+                }
+                if (maxTemp > 50) {
+                    maxTemp = 50;
+                    minTemp = maxTemp - currentRange;
+                }
+
+                return { minTemp, maxTemp, range: currentRange };
+            };
+
+            // 마우스 휠 이벤트
+            const handleWheel = (e) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.2 : 0.2;
+                setZoomLevel(prev => Math.max(1, Math.min(10, prev + delta)));
+
+                // 현재 데이터의 마지막 값을 중심으로
+                if (data.length > 0) {
+                    setCenterTemp(data[data.length - 1]);
+                }
+            };
+
+            // 리셋 버튼
+            const resetZoom = () => {
+                setZoomLevel(1);
+                setCenterTemp(25);
+            };
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const ctx = canvas.getContext('2d');
+                const width = canvas.width;
+                const height = canvas.height;
+
+                const { minTemp, maxTemp, range } = getRange();
+
+                // 배경 클리어
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(0, 0, width, height);
+
+                // 그리드 라인 및 눈금
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 1;
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '10px sans-serif';
+
+                const gridLines = 5;
+                for (let i = 0; i <= gridLines; i++) {
+                    const y = (height / gridLines) * i;
+                    const temp = maxTemp - (range / gridLines) * i;
+
+                    ctx.beginPath();
+                    ctx.moveTo(25, y);
+                    ctx.lineTo(width, y);
+                    ctx.stroke();
+
+                    // 온도 라벨
+                    ctx.fillText(`${temp.toFixed(0)}°`, 2, y + 4);
+                }
+
+                // 목표 범위 표시 (녹색 영역)
+                const targetMinY = height - ((targetTemp - tolerance - minTemp) / range) * height;
+                const targetMaxY = height - ((targetTemp + tolerance - minTemp) / range) * height;
+
+                // 범위 내에 있을 때만 표시
+                if (targetMaxY < height && targetMinY > 0) {
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+                    ctx.fillRect(25, Math.max(0, targetMaxY), width - 25, Math.min(height, targetMinY) - Math.max(0, targetMaxY));
+                }
+
+                // 목표선
+                const targetY = height - ((targetTemp - minTemp) / range) * height;
+                if (targetY >= 0 && targetY <= height) {
+                    ctx.strokeStyle = '#22c55e';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(25, targetY);
+                    ctx.lineTo(width, targetY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // 데이터가 없으면 여기서 종료
+                if (data.length === 0) return;
+
+                // 온도 데이터 그리기
+                ctx.strokeStyle = '#6366f1';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+
+                const graphWidth = width - 25;
+                const pointSpacing = graphWidth / Math.max(data.length - 1, 1);
+
+                let started = false;
+                data.forEach((temp, index) => {
+                    const x = 25 + index * pointSpacing;
+                    const y = height - ((temp - minTemp) / range) * height;
+
+                    // 범위 내에 있는 점만 그리기
+                    const clampedY = Math.max(0, Math.min(height, y));
+
+                    if (!started) {
+                        ctx.moveTo(x, clampedY);
+                        started = true;
+                    } else {
+                        ctx.lineTo(x, clampedY);
+                    }
+                });
+
+                ctx.stroke();
+
+                // 마지막 점 강조
+                if (data.length > 0) {
+                    const lastTemp = data[data.length - 1];
+                    const lastX = 25 + (data.length - 1) * pointSpacing;
+                    const lastY = height - ((lastTemp - minTemp) / range) * height;
+                    const clampedLastY = Math.max(0, Math.min(height, lastY));
+
+                    ctx.fillStyle = '#6366f1';
+                    ctx.beginPath();
+                    ctx.arc(lastX, clampedLastY, 5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 현재 온도 라벨
+                    ctx.fillStyle = '#1e1b4b';
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillText(`${lastTemp.toFixed(1)}°C`, lastX - 35, clampedLastY - 10);
+                }
+
+            }, [data, targetTemp, tolerance, zoomLevel, centerTemp]);
+
+            const { minTemp, maxTemp } = getRange();
+
+            return (
+                <div className="bg-white rounded-xl border border-slate-200 p-4 h-full">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                            📈 실시간 온도 그래프
+                        </h3>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">줌: {zoomLevel.toFixed(1)}x</span>
+                            <button
+                                onClick={resetZoom}
+                                className="text-xs bg-slate-100 px-2 py-1 rounded hover:bg-slate-200"
+                            >
+                                리셋
+                            </button>
+                        </div>
+                    </div>
+                    <div className="relative">
+                        <canvas
+                            ref={canvasRef}
+                            width={300}
+                            height={200}
+                            onWheel={handleWheel}
+                            className="w-full rounded-lg border border-slate-100 cursor-ns-resize"
+                            title="마우스 휠로 확대/축소"
+                        />
+                        <div className="absolute top-2 right-2 text-xs text-slate-500 bg-white/80 px-1 rounded">
+                            {maxTemp.toFixed(0)}°C
+                        </div>
+                        <div className="absolute bottom-2 right-2 text-xs text-slate-500 bg-white/80 px-1 rounded">
+                            {minTemp.toFixed(0)}°C
+                        </div>
+                    </div>
+                    <div className="mt-2 flex justify-between text-xs text-slate-500">
+                        <span className="text-green-600">━━ 목표: {targetTemp}°C (±{tolerance})</span>
+                        <span className="text-indigo-600">━━ 현재 온도</span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400 text-center">
+                        🖱️ 마우스 휠: 확대/축소
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            // 상태 변수들
+            const [targetTemp, setTargetTemp] = useState(20);
+            const [currentTemp, setCurrentTemp] = useState(null);
+            const [score, setScore] = useState(0);
+            const [holdTime, setHoldTime] = useState(0);
+            const [message, setMessage] = useState("EZMaker를 연결해주세요.");
+            const [statusColor, setStatusColor] = useState("text-gray-500");
+
+            // 연결 관련 상태
+            const [isConnected, setIsConnected] = useState(false);
+            const [port, setPort] = useState(null);
+            const readerRef = useRef(null);
+            const isReadingRef = useRef(false);
+
+            // 그래프 데이터 (최근 50개)
+            const [tempHistory, setTempHistory] = useState([]);
+            const MAX_HISTORY = 50;
+
+            // 디버그 로그
+            const [debugLog, setDebugLog] = useState([]);
+            const [baudRate, setBaudRate] = useState(115200);
+
+            // useRef로 최신 값 추적 (타이머 안정화용)
+            const currentTempRef = useRef(currentTemp);
+            const targetTempRef = useRef(targetTemp);
+            useEffect(() => { currentTempRef.current = currentTemp; }, [currentTemp]);
+            useEffect(() => { targetTempRef.current = targetTemp; }, [targetTemp]);
+
+            // 상수 설정
+            const TOLERANCE = 1;
+            const TARGET_TIME = 5;
+
+            // 디버그 로그 추가 함수
+            const addDebugLog = (msg) => {
+                const timestamp = new Date().toLocaleTimeString();
+                setDebugLog(prev => [...prev.slice(-20), `[${timestamp}] ${msg}`]);
+            };
+
+            // Web Serial API 연결 함수
+            const connectSerial = async () => {
+                if (!("serial" in navigator)) {
+                    alert("이 브라우저는 Web Serial API를 지원하지 않습니다. 크롬이나 엣지를 사용해주세요.");
+                    return;
+                }
+
+                try {
+                    const selectedPort = await navigator.serial.requestPort();
+                    addDebugLog(`포트 선택됨, 보드레이트: ${baudRate}`);
+
+                    await selectedPort.open({ baudRate: baudRate });
+                    addDebugLog("포트 열림");
+
+                    setPort(selectedPort);
+                    setIsConnected(true);
+                    isReadingRef.current = true;
+                    setMessage("센서 데이터 수신 대기 중...");
+                    readSerialLoop(selectedPort);
+                } catch (error) {
+                    console.error("연결 실패:", error);
+                    addDebugLog(`연결 실패: ${error.message}`);
+                    alert("연결에 실패했습니다. 포트를 선택하지 않았거나 이미 사용 중일 수 있습니다.");
+                }
+            };
+
+            // 연결 해제 함수
+            const disconnectSerial = async () => {
+                isReadingRef.current = false;
+                addDebugLog("연결 해제 시도...");
+
+                if (readerRef.current) {
+                    try {
+                        await readerRef.current.cancel();
+                    } catch (e) {
+                        console.log("Reader cancel error:", e);
+                    }
+                }
+                if (port) {
+                    try {
+                        await port.close();
+                    } catch (e) {
+                        console.log("Port close error:", e);
+                    }
+                }
+                setPort(null);
+                setIsConnected(false);
+                setCurrentTemp(null);
+                setMessage("EZMaker를 연결해주세요.");
+                setStatusColor("text-gray-500");
+                addDebugLog("연결 해제됨");
+            };
+
+            // 시리얼 데이터 읽기 루프
+            const readSerialLoop = async (port) => {
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable.getReader();
+                readerRef.current = reader;
+
+                let buffer = "";
+                addDebugLog("데이터 수신 시작...");
+
+                try {
+                    while (isReadingRef.current) {
+                        const { value, done } = await reader.read();
+                        if (done) {
+                            addDebugLog("스트림 종료");
+                            break;
+                        }
+                        if (value) {
+                            addDebugLog(`수신: "${value.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`);
+                            buffer += value;
+
+                            // 다양한 줄바꿈 형식 처리 (\r\n, \n, \r)
+                            const lines = buffer.split(/[\r\n]+/);
+                            buffer = lines.pop();
+
+                            for (const line of lines) {
+                                const trimmedLine = line.trim();
+                                if (trimmedLine === '') continue;
+
+                                addDebugLog(`라인 파싱: "${trimmedLine}"`);
+
+                                // 숫자만 추출 (예: "25.5" 또는 "온도: 25.5" 등)
+                                const matches = trimmedLine.match(/-?\d+\.?\d*/g);
+                                if (matches && matches.length > 0) {
+                                    const tempVal = parseFloat(matches[matches.length - 1]); // 마지막 숫자 사용
+                                    if (!isNaN(tempVal) && tempVal >= -40 && tempVal <= 100) {
+                                        addDebugLog(`온도 값: ${tempVal}°C`);
+                                        setCurrentTemp(tempVal);
+                                        setTempHistory(prev => {
+                                            const newHistory = [...prev, tempVal];
+                                            return newHistory.slice(-MAX_HISTORY);
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("읽기 에러:", error);
+                    addDebugLog(`읽기 에러: ${error.message}`);
+                } finally {
+                    reader.releaseLock();
+                }
+            };
+
+            // 타이머 로직 (Ref 사용으로 안정화)
+            useEffect(() => {
+                if (!isConnected) return;
+
+                const interval = setInterval(() => {
+                    const temp = currentTempRef.current;
+                    const target = targetTempRef.current;
+
+                    if (temp === null) return;
+
+                    const minTemp = target - TOLERANCE;
+                    const maxTemp = target + TOLERANCE;
+                    const isInRange = temp >= minTemp && temp <= maxTemp;
+
+                    if (isInRange) {
+                        setHoldTime(prev => {
+                            const newTime = prev + 0.1;
+                            if (newTime >= TARGET_TIME) {
+                                setScore(s => s + 1);
+                                return 0;
+                            }
+                            return newTime;
+                        });
+                        setStatusColor("text-green-600");
+                        setMessage("유지 중... 움직이지 마세요!");
+                    } else {
+                        setHoldTime(0);
+                        if (temp < minTemp) {
+                            setMessage("온도가 너무 낮습니다!");
+                            setStatusColor("text-blue-500");
+                        } else {
+                            setMessage("온도가 너무 높습니다!");
+                            setStatusColor("text-red-500");
+                        }
+                    }
+                }, 100);
+
+                return () => clearInterval(interval);
+            }, [isConnected]);
+
+            const progressPercentage = Math.min((holdTime / TARGET_TIME) * 100, 100);
+
+            return (
+                <div className="min-h-screen bg-slate-50 p-4 flex items-start justify-center gap-4">
+                    {/* 왼쪽: 메인 컨트롤 */}
+                    <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+
+                        {/* 헤더 */}
+                        <div className="bg-indigo-600 p-6 text-white text-center">
+                            <div className="flex justify-between items-start mb-2">
+                                <h1 className="text-2xl font-bold flex items-center gap-2">
+                                    <ThermometerIcon />
+                                    온도 챌린지
+                                </h1>
+                                {/* 연결 상태 표시 뱃지 */}
+                                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${isConnected ? "bg-green-500 text-white" : "bg-slate-700 text-slate-300"
+                                    }`}>
+                                    <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-white animate-pulse" : "bg-red-500"}`} />
+                                    {isConnected ? "센서 연결됨" : "연결 안됨"}
+                                </div>
+                            </div>
+                            <p className="text-indigo-200 text-sm text-left">
+                                5초 동안 온도를 유지하세요!
+                            </p>
+                        </div>
+
+                        {/* 점수판 */}
+                        <div className="bg-slate-100 p-4 flex justify-between items-center border-b border-slate-200">
+                            <div className="flex items-center gap-2">
+                                <TrophyIcon />
+                                <span className="font-bold text-slate-700 text-lg">승점</span>
+                            </div>
+                            <span className="text-3xl font-extrabold text-indigo-600">{score}점</span>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+
+                            {/* 메시지 및 타이머 */}
+                            <div className="text-center space-y-4">
+                                <div className={`text-lg font-bold ${statusColor} flex items-center justify-center gap-2 h-8`}>
+                                    {isConnected && holdTime > 0 ? <TimerIcon /> : <AlertCircleIcon />}
+                                    {message}
+                                </div>
+
+                                <div className="relative h-6 bg-slate-200 rounded-full overflow-hidden w-full shadow-inner">
+                                    <div
+                                        className={`absolute top-0 left-0 h-full transition-all duration-100 ease-linear ${holdTime > 0 ? 'bg-green-500' : 'bg-slate-300'
+                                            }`}
+                                        style={{ width: `${progressPercentage}%` }}
+                                    />
+                                    <div className="absolute top-0 w-full h-full flex items-center justify-center text-xs font-bold text-slate-700 z-10">
+                                        {holdTime.toFixed(1)}초 / {TARGET_TIME}초
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            <div className="space-y-4">
+
+                                {/* 1. 목표 온도 설정 */}
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-sm font-semibold text-slate-600">목표 온도</label>
+                                        <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-sm font-bold">
+                                            {targetTemp}°C
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range" min="15" max="35" step="1"
+                                        value={targetTemp}
+                                        onChange={(e) => {
+                                            setTargetTemp(Number(e.target.value));
+                                            setHoldTime(0);
+                                        }}
+                                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                    />
+                                </div>
+
+                                {/* 2. Baud Rate 설정 */}
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-semibold text-slate-600">Baud Rate:</label>
+                                    <select
+                                        value={baudRate}
+                                        onChange={(e) => setBaudRate(Number(e.target.value))}
+                                        disabled={isConnected}
+                                        className="px-2 py-1 rounded border border-slate-300 text-sm"
+                                    >
+                                        <option value={9600}>9600</option>
+                                        <option value={19200}>19200</option>
+                                        <option value={38400}>38400</option>
+                                        <option value={57600}>57600</option>
+                                        <option value={115200}>115200</option>
+                                    </select>
+                                </div>
+
+                                {/* 3. 센서 연결 및 현재 온도 표시 */}
+                                <div className={`p-4 rounded-xl border transition-colors space-y-3 ${isConnected ? "bg-green-50 border-green-200" : "bg-slate-50 border-slate-200"
+                                    }`}>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                            {isConnected ? (
+                                                <UsbIcon className="text-green-600 icon-sm" />
+                                            ) : (
+                                                <UnplugIcon className="text-gray-400 icon-sm" />
+                                            )}
+                                            {isConnected ? "실시간 센서 값" : "센서 연결 필요"}
+                                        </label>
+                                        <span className={`px-3 py-1 rounded-full text-xl font-bold border ${currentTemp !== null && Math.abs(currentTemp - targetTemp) <= TOLERANCE
+                                                ? 'bg-green-100 text-green-700 border-green-200'
+                                                : 'bg-red-50 text-red-600 border-red-100'
+                                            }`}>
+                                            {currentTemp !== null ? `${currentTemp.toFixed(1)}°C` : "--°C"}
+                                        </span>
+                                    </div>
+
+                                    {isConnected && (
+                                        <div className="text-xs text-green-600 text-center font-medium mb-2 animate-pulse">
+                                            EZMaker 센서에서 데이터를 수신 중입니다...
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={isConnected ? disconnectSerial : connectSerial}
+                                        className={`w-full py-3 rounded-lg font-bold text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 ${isConnected
+                                                ? "bg-red-500 hover:bg-red-600"
+                                                : "bg-indigo-600 hover:bg-indigo-700"
+                                            }`}
+                                    >
+                                        {isConnected ? (
+                                            <>
+                                                <UnplugIcon />
+                                                연결 끊기
+                                            </>
+                                        ) : (
+                                            <>
+                                                <UsbIcon />
+                                                EZMaker 연결하기
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 오른쪽: 그래프 및 디버그 */}
+                    <div className="w-96 space-y-4">
+                        {/* 실시간 그래프 */}
+                        <TemperatureGraph
+                            data={tempHistory}
+                            targetTemp={targetTemp}
+                            tolerance={TOLERANCE}
+                        />
+
+                        {/* 디버그 로그 */}
+                        <div className="bg-white rounded-xl border border-slate-200 p-4">
+                            <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center justify-between">
+                                🔧 디버그 로그
+                                <button
+                                    onClick={() => setDebugLog([])}
+                                    className="text-xs bg-slate-100 px-2 py-1 rounded hover:bg-slate-200"
+                                >
+                                    클리어
+                                </button>
+                            </h3>
+                            <div className="bg-slate-900 text-green-400 p-3 rounded-lg text-xs font-mono h-48 overflow-y-auto">
+                                {debugLog.length === 0 ? (
+                                    <div className="text-slate-500">연결하면 로그가 표시됩니다...</div>
+                                ) : (
+                                    debugLog.map((log, i) => (
+                                        <div key={i} className="mb-1">{log}</div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+
+</html>
