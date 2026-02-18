@@ -320,11 +320,13 @@
             // useRef로 최신 값 추적 (타이머 안정화용)
             const currentTempRef = useRef(currentTemp);
             const targetTempRef = useRef(targetTemp);
+            const toleranceRef = useRef(tolerance);
             useEffect(() => { currentTempRef.current = currentTemp; }, [currentTemp]);
             useEffect(() => { targetTempRef.current = targetTemp; }, [targetTemp]);
+            useEffect(() => { toleranceRef.current = tolerance; }, [tolerance]);
 
             // 상수 설정
-            const TOLERANCE = 1;
+            const [tolerance, setTolerance] = useState(1);
             const TARGET_TIME = 5;
 
             // 디버그 로그 추가 함수
@@ -451,8 +453,8 @@
 
                     if (temp === null) return;
 
-                    const minTemp = target - TOLERANCE;
-                    const maxTemp = target + TOLERANCE;
+                    const minTemp = target - toleranceRef.current;
+                    const maxTemp = target + toleranceRef.current;
                     const isInRange = temp >= minTemp && temp <= maxTemp;
 
                     if (isInRange) {
@@ -560,6 +562,29 @@
                                     />
                                 </div>
 
+                                {/* 2. 허용 범위 설정 */}
+                                <div className="space-y-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-sm font-semibold text-amber-700">🎯 허용 범위 (난이도)</label>
+                                        <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-sm font-bold">
+                                            ±{tolerance.toFixed(1)}°C
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range" min="0.5" max="3" step="0.5"
+                                        value={tolerance}
+                                        onChange={(e) => {
+                                            setTolerance(Number(e.target.value));
+                                            setHoldTime(0);
+                                        }}
+                                        className="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    />
+                                    <div className="flex justify-between text-xs text-amber-600">
+                                        <span>어려움 (±0.5°C)</span>
+                                        <span>쉬움 (±3°C)</span>
+                                    </div>
+                                </div>
+
                                 {/* 2. Baud Rate 설정 */}
                                 <div className="flex items-center gap-2">
                                     <label className="text-sm font-semibold text-slate-600">Baud Rate:</label>
@@ -589,9 +614,9 @@
                                             )}
                                             {isConnected ? "실시간 센서 값" : "센서 연결 필요"}
                                         </label>
-                                        <span className={`px-3 py-1 rounded-full text-xl font-bold border ${currentTemp !== null && Math.abs(currentTemp - targetTemp) <= TOLERANCE
-                                                ? 'bg-green-100 text-green-700 border-green-200'
-                                                : 'bg-red-50 text-red-600 border-red-100'
+                                        <span className={`px-3 py-1 rounded-full text-xl font-bold border ${currentTemp !== null && Math.abs(currentTemp - targetTemp) <= tolerance
+                                            ? 'bg-green-100 text-green-700 border-green-200'
+                                            : 'bg-red-50 text-red-600 border-red-100'
                                             }`}>
                                             {currentTemp !== null ? `${currentTemp.toFixed(1)}°C` : "--°C"}
                                         </span>
@@ -606,8 +631,8 @@
                                     <button
                                         onClick={isConnected ? disconnectSerial : connectSerial}
                                         className={`w-full py-3 rounded-lg font-bold text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 ${isConnected
-                                                ? "bg-red-500 hover:bg-red-600"
-                                                : "bg-indigo-600 hover:bg-indigo-700"
+                                            ? "bg-red-500 hover:bg-red-600"
+                                            : "bg-indigo-600 hover:bg-indigo-700"
                                             }`}
                                     >
                                         {isConnected ? (
@@ -634,7 +659,7 @@
                         <TemperatureGraph
                             data={tempHistory}
                             targetTemp={targetTemp}
-                            tolerance={TOLERANCE}
+                            tolerance={tolerance}
                         />
 
                         {/* 디버그 로그 */}
